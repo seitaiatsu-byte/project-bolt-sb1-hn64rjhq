@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Upload, Download, CheckCircle, AlertCircle, FileText, Users } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
-import { fetchAllCustomersByCreatedDesc } from '../lib/fetchAllCustomers';
+import { fetchAllCustomersByCreatedDesc, fetchCustomerCountExact } from '../lib/fetchAllCustomers';
 
 type Customer = Database['public']['Tables']['customers']['Row'];
 
@@ -12,6 +12,7 @@ export default function CustomerImport() {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{ success: number; error: number; messages: string[] } | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [dbTotalCount, setDbTotalCount] = useState<number | null>(null);
   const [loadingList, setLoadingList] = useState(false);
   const [listPage, setListPage] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -33,8 +34,9 @@ export default function CustomerImport() {
   const loadCustomers = async () => {
     setLoadingList(true);
     try {
-      const rows = await fetchAllCustomersByCreatedDesc();
+      const [rows, count] = await Promise.all([fetchAllCustomersByCreatedDesc(), fetchCustomerCountExact()]);
       setCustomers(rows as Customer[]);
+      setDbTotalCount(count ?? rows.length);
       setListPage(1);
     } catch (error) {
       console.error('顧客リスト読み込みエラー:', error);
@@ -389,7 +391,14 @@ export default function CustomerImport() {
             <h3 className="text-xl font-bold text-gray-800">登録名簿一覧</h3>
           </div>
           <div className="text-sm font-bold text-blue-600 bg-white px-4 py-2 rounded-lg shadow">
-            合計 {customers.length} 件
+            {loadingList ? (
+              '登録者数を取得中…'
+            ) : (
+              <>
+                登録者 合計{' '}
+                <span className="tabular-nums">{dbTotalCount ?? customers.length}</span> 名
+              </>
+            )}
           </div>
         </div>
 
@@ -453,7 +462,8 @@ export default function CustomerImport() {
             {customers.length > 0 && totalListPages > 1 && (
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-200 bg-gray-50 text-sm">
                 <span className="text-gray-600">
-                  {listPageStart + 1}〜{listRangeEnd} 件を表示（全 {customers.length} 件・{LIST_ROWS_PER_PAGE} 件/ページ）
+                  {listPageStart + 1}〜{listRangeEnd} 名を表示（読込 {customers.length} 名 / DB 登録{' '}
+                  {dbTotalCount ?? customers.length} 名・{LIST_ROWS_PER_PAGE} 名/ページ）
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -476,6 +486,22 @@ export default function CustomerImport() {
                     次へ
                   </button>
                 </div>
+              </div>
+            )}
+            {!loadingList && customers.length > 0 && dbTotalCount !== null && (
+              <div className="px-4 py-2 border-t border-gray-100 bg-white text-xs text-gray-600 text-center">
+                ※データベース上の登録者は <span className="font-bold text-gray-800">{dbTotalCount}</span> 名です。
+                {customers.length !== dbTotalCount && (
+                  <span className="text-amber-700 font-bold ml-1">
+                    （この画面の一覧には {customers.length} 名までしか読み込めていません。ネットワークまたは権限設定を確認してください。）
+                  </span>
+                )}
+                {customers.length === dbTotalCount && totalListPages > 1 && (
+                  <span className="ml-1">下のページ送りで全員を確認できます。</span>
+                )}
+                {customers.length === dbTotalCount && totalListPages === 1 && (
+                  <span className="ml-1">この一覧に全員を表示しています。</span>
+                )}
               </div>
             )}
           </div>

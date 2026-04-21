@@ -3,6 +3,16 @@ import type { Database } from './database.types';
 
 export type CustomerRow = Database['public']['Tables']['customers']['Row'];
 
+/** customers テーブルの行数（RLS 適用後の DB 上の件数）。一覧の取得件数と独立。 */
+export async function fetchCustomerCountExact(): Promise<number | null> {
+  const { count, error } = await supabase.from('customers').select('*', { count: 'exact', head: true });
+  if (error) {
+    console.error('顧客件数カウントエラー:', error);
+    return null;
+  }
+  return count ?? 0;
+}
+
 /**
  * PostgREST の max_rows により、要求した range より少ない件数しか返らないことがある。
  * 「返却 < chunk で打ち切る」と max_rows=500・chunk=1000 のとき 500 件で誤終了する。
