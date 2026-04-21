@@ -3,6 +3,9 @@ import type { Database } from './database.types';
 
 export type CustomerRow = Database['public']['Tables']['customers']['Row'];
 
+/** PostgREST の max_rows を超えないよう 1 リクエストの件数（range は使わない） */
+const CHUNK_SIZE = 500;
+
 /** customers テーブルの行数（RLS 適用後の DB 上の件数）。一覧の取得件数と独立。 */
 export async function fetchCustomerCountExact(): Promise<number | null> {
   const { count, error } = await supabase.from('customers').select('*', { count: 'exact', head: true });
@@ -14,53 +17,61 @@ export async function fetchCustomerCountExact(): Promise<number | null> {
 }
 
 /**
- * PostgREST の max_rows により、要求した range より少ない件数しか返らないことがある。
- * 「返却 < chunk で打ち切る」と max_rows=500・chunk=1000 のとき 500 件で誤終了する。
- * offset は実際の返却件数だけ進め、0 件が返るまで繰り返す（最後の不足ページの次の range が空になる）。
+ * offset の .range() は max_rows と組み合わさると取りこぼしやすいため、
+ * 主キー id のキーセットページングで全行を取得する（各リクエストは id 昇順 + limit のみ）。
+ * 表示用に created_at 降順へ並べ替え。
  */
-const RANGE_CHUNK = 500;
-
 export async function fetchAllCustomersByCreatedDesc(): Promise<CustomerRow[]> {
   const rows: CustomerRow[] = [];
-  let offset = 0;
+  let lastId: string | null = null;
 
   for (;;) {
-    const { data, error } = await supabase
-      .from('customers')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + RANGE_CHUNK - 1);
-
+    let q = supabase.from('customers').select('*').order('id', { ascending: true }).limit(CHUNK_SIZE);
+    if (lastId !== null) {
+      q = q.gt('id', lastId);
+    }
+    const { data, error } = await q;
     if (error) throw error;
     const batch = (data || []) as CustomerRow[];
     if (batch.length === 0) break;
     rows.push(...batch);
-    offset += batch.length;
+    lastId = batch[batch.length - 1]!.id;
+    if (batch.length < CHUNK_SIZE) break;
   }
 
+  rows.sort((a, b) => {
+    const ta = new Date(a.created_at).getTime();
+    const tb = new Date(b.created_at).getTime();
+    if (tb !== ta) return tb - ta;
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+  });
   return rows;
 }
 
-/** 自動採番用: customer_number のみ全件（max_rows 対策でページング） */
+/** 自動採番用: customer_number のみ全件（id キーセット + limit） */
 export async function fetchAllCustomerNumbers(): Promise<string[]> {
   const out: string[] = [];
-  let offset = 0;
+  let lastId: string | null = null;
 
   for (;;) {
-    const { data, error } = await supabase
+    let q = supabase
       .from('customers')
-      .select('customer_number')
+      .select('id, customer_number')
       .not('customer_number', 'is', null)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + RANGE_CHUNK - 1);
-
+      .order('id', { ascending: true })
+      .limit(CHUNK_SIZE);
+    if (lastId !== null) {
+      q = q.gt('id', lastId);
+    }
+    const { data, error } = await q;
     if (error) throw error;
     const batch = data || [];
     if (batch.length === 0) break;
     for (const r of batch) {
       if (r.customer_number != null && r.customer_number !== '') out.push(r.customer_number);
     }
-    offset += batch.length;
+    lastId = batch[batch.length - 1]!.id;
+    if (batch.length < CHUNK_SIZE) break;
   }
 
   return out;
