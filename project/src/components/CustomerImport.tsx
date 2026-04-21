@@ -5,11 +5,15 @@ import type { Database } from '../lib/database.types';
 
 type Customer = Database['public']['Tables']['customers']['Row'];
 
+const SUPABASE_FETCH_PAGE = 1000;
+const LIST_ROWS_PER_PAGE = 200;
+
 export default function CustomerImport() {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{ success: number; error: number; messages: string[] } | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingList, setLoadingList] = useState(false);
+  const [listPage, setListPage] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -21,23 +25,41 @@ export default function CustomerImport() {
     return () => window.removeEventListener('customers-updated', reload);
   }, []);
 
+  useEffect(() => {
+    const max = Math.max(1, Math.ceil(customers.length / LIST_ROWS_PER_PAGE));
+    setListPage((p) => (p > max ? max : p));
+  }, [customers.length]);
+
   const loadCustomers = async () => {
     setLoadingList(true);
     try {
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(500);
+      const rows: Customer[] = [];
+      for (let from = 0; ; from += SUPABASE_FETCH_PAGE) {
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(from, from + SUPABASE_FETCH_PAGE - 1);
 
-      if (error) throw error;
-      setCustomers((data || []) as Customer[]);
+        if (error) throw error;
+        const batch = (data || []) as Customer[];
+        rows.push(...batch);
+        if (batch.length < SUPABASE_FETCH_PAGE) break;
+      }
+      setCustomers(rows);
+      setListPage(1);
     } catch (error) {
       console.error('顧客リスト読み込みエラー:', error);
     } finally {
       setLoadingList(false);
     }
   };
+
+  const totalListPages = Math.max(1, Math.ceil(customers.length / LIST_ROWS_PER_PAGE));
+  const effectiveListPage = Math.min(listPage, totalListPages);
+  const listPageStart = (effectiveListPage - 1) * LIST_ROWS_PER_PAGE;
+  const displayedCustomers = customers.slice(listPageStart, listPageStart + LIST_ROWS_PER_PAGE);
+  const listRangeEnd = customers.length === 0 ? 0 : Math.min(listPageStart + displayedCustomers.length, customers.length);
 
   const downloadTemplate = () => {
     const csv = 'customer_number,name,name_kana,gender,birth_date,phone_number,referral_source,prefecture,city,town,chief_complaint_1,chief_complaint_2,chief_complaint_3,email,memo\n1001,田中太郎,たなかたろう,男性,1980/01/01,09012345678,ホームページ,大阪府,高槻市,芥川町,腰痛,肩こり,,tanaka@example.com,\n5001,山田花子,やまだはなこ,女性,1990/05/15,08098765432,紹介,兵庫県,川西市,栄町,首の痛み,頭痛,姿勢改善,yamada@example.com,';
@@ -408,7 +430,7 @@ export default function CustomerImport() {
                   </tr>
                 </thead>
                 <tbody>
-                  {customers.map((customer, idx) => (
+                  {displayedCustomers.map((customer, idx) => (
                     <tr
                       key={customer.id}
                       className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}
@@ -440,12 +462,34 @@ export default function CustomerImport() {
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
-
-        {customers.length >= 500 && (
-          <div className="mt-3 text-xs text-gray-500 text-center">
-            ※最新500件を表示しています
+            {customers.length > 0 && totalListPages > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-200 bg-gray-50 text-sm">
+                <span className="text-gray-600">
+                  {listPageStart + 1}〜{listRangeEnd} 件を表示（全 {customers.length} 件・{LIST_ROWS_PER_PAGE} 件/ページ）
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={effectiveListPage <= 1}
+                    onClick={() => setListPage((p) => Math.max(1, p - 1))}
+                    className="px-3 py-1.5 rounded-lg font-bold border border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100"
+                  >
+                    前へ
+                  </button>
+                  <span className="font-mono text-gray-700 px-2">
+                    {effectiveListPage} / {totalListPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={effectiveListPage >= totalListPages}
+                    onClick={() => setListPage((p) => Math.min(totalListPages, p + 1))}
+                    className="px-3 py-1.5 rounded-lg font-bold border border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100"
+                  >
+                    次へ
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
