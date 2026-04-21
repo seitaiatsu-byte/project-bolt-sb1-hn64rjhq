@@ -2,5 +2,9 @@
   "name": "project-bolt-sb1-hn64rjhq",
   "private": true,
   "version": "1.0.0",
-  "description": "フロントエンド（Vite）は project/ にあります。開発: cd project && npm install && npm run dev"
+  "description": "フロントエンド（Vite）は project/ にあります。開発: cd project && npm install && npm run dev",
+  "scripts": {
+    "build": "cd project && npm install && npm run build",
+    "dev": "cd project && npm run dev"
+  }
 }
