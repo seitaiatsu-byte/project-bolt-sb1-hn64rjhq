@@ -52,12 +52,23 @@ export default function CustomerSearchPanel({
   const listRef = useRef<HTMLDivElement>(null);
 
   const loadCustomers = useCallback(async () => {
-    const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false }).limit(3000);
-    if (error) {
-      console.error('顧客一覧の取得エラー:', error);
-      return;
+    const pageSize = 1000;
+    const rows: CustomerRow[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) {
+        console.error('顧客一覧の取得エラー:', error);
+        break;
+      }
+      const batch = data || [];
+      rows.push(...batch);
+      if (batch.length < pageSize) break;
     }
-    setAllCustomers(data || []);
+    setAllCustomers(rows);
   }, []);
 
   useEffect(() => {
@@ -78,20 +89,49 @@ export default function CustomerSearchPanel({
   const searchCustomers = useCallback((q: string) => {
     setIsSearching(true);
     const nq = normalize(q);
-    const digits = nq.replace(/\D/g, '');
-    const results = allCustomers.filter((c) => {
+    const stripped = nq.replace(/\s/g, '');
+    const digits = stripped.replace(/\D/g, '');
+    const isPureNumeric = stripped.length > 0 && /^\d+$/.test(stripped);
+
+    type Scored = { row: CustomerRow; tier: number };
+    const scored: Scored[] = [];
+
+    for (const c of allCustomers) {
       const name = normalize(c.name || '');
       const kana = normalize(c.name_kana || '');
       const numberRaw = normalize(c.customer_number || '');
       const numberDigits = numberRaw.replace(/\D/g, '');
-      return (
-        name.includes(nq) ||
-        kana.includes(nq) ||
-        numberRaw.includes(nq) ||
-        (digits.length > 0 && numberDigits.includes(digits))
-      );
+
+      let tier: number | null = null;
+
+      if (digits.length > 0) {
+        if (numberDigits === digits) tier = 0;
+        else if (numberDigits.startsWith(digits)) tier = 1;
+      }
+
+      if (!isPureNumeric) {
+        if (tier === null && nq.length > 0) {
+          if (numberRaw === nq) tier = 0;
+          else if (numberRaw.startsWith(nq)) tier = 2;
+        }
+        if (name.includes(nq) || kana.includes(nq)) {
+          tier = tier === null ? 10 : Math.min(tier, 10);
+        }
+      }
+
+      if (tier !== null) scored.push({ row: c, tier });
+    }
+
+    scored.sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier - b.tier;
+      const an = normalize(a.row.customer_number || '').replace(/\D/g, '') || '';
+      const bn = normalize(b.row.customer_number || '').replace(/\D/g, '') || '';
+      if (an !== bn) return an.localeCompare(bn, undefined, { numeric: true });
+      return (a.row.name || '').localeCompare(b.row.name || '');
     });
-    setSearchResults(results.slice(0, 50));
+
+    const maxResults = 200;
+    setSearchResults(scored.slice(0, maxResults).map((s) => s.row));
     setHighlightIndex(0);
     setIsSearching(false);
   }, [allCustomers]);
