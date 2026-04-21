@@ -31,3 +31,14 @@
 
 【デプロイのトリガー】
 ・GitHub の main に push すると、連携していれば Vercel が自動デプロイします。
+
+【Production Overrides が直せない → 新規プロジェクトで Git 連携（最短）】
+※ Cursor から Vercel にログインして「Import」ボタンを押すことはできない。以下はブラウザで 2〜3 分。
+1) vercel.com → Add New… → Project → 同じ GitHub リポジトリを Import。
+2) Root Directory に「project」と入力（必須）。Build / Output の上書きは空のまま。
+3) Environment Variables を旧プロジェクトからコピー（VITE_SUPABASE_URL 等）→ Deploy。
+4) 新 URL で動作確認後、旧プロジェクトは Settings → Delete Project。
+
+【CLI のみ（Git 連携なし・即デプロイ）】
+・PC で一度 vercel login 済みなら: cd project して npx vercel deploy --prod
+・リンク先は project 直下の .vercel（git 管理外）。新規リンクは npx vercel link。
