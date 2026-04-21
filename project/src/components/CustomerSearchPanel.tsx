@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
+import { fetchAllCustomersByCreatedDesc } from '../lib/fetchAllCustomers';
 
 export type CustomerRow = Database['public']['Tables']['customers']['Row'];
 
@@ -52,23 +52,12 @@ export default function CustomerSearchPanel({
   const listRef = useRef<HTMLDivElement>(null);
 
   const loadCustomers = useCallback(async () => {
-    const pageSize = 1000;
-    const rows: CustomerRow[] = [];
-    for (let from = 0; ; from += pageSize) {
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(from, from + pageSize - 1);
-      if (error) {
-        console.error('顧客一覧の取得エラー:', error);
-        break;
-      }
-      const batch = data || [];
-      rows.push(...batch);
-      if (batch.length < pageSize) break;
+    try {
+      const rows = await fetchAllCustomersByCreatedDesc();
+      setAllCustomers(rows);
+    } catch (error) {
+      console.error('顧客一覧の取得エラー:', error);
     }
-    setAllCustomers(rows);
   }, []);
 
   useEffect(() => {

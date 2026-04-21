@@ -3,6 +3,7 @@ import { X, Save } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
 import { CLINIC_FULL } from '../lib/clinic';
+import { fetchAllCustomerNumbers } from '../lib/fetchAllCustomers';
 
 type Customer = Database['public']['Tables']['customers']['Row'];
 type ReferralRow = Database['public']['Tables']['referral_source_master']['Row'];
@@ -107,9 +108,9 @@ export default function NewCustomerForm({ onClose, onSuccess }: NewCustomerFormP
   }, [formData.postal_code]);
 
   const resolveAutoCustomerNumber = async (): Promise<string> => {
-    const { data } = await supabase.from('customers').select('customer_number').not('customer_number', 'is', null);
-    const nums = (data || [])
-      .map((r) => parseInt((r.customer_number || '').replace(/\D/g, ''), 10))
+    const numbers = await fetchAllCustomerNumbers();
+    const nums = numbers
+      .map((s) => parseInt(s.replace(/\D/g, ''), 10))
       .filter((n) => Number.isFinite(n));
     const max = nums.length ? Math.max(...nums) : 0;
     return String(max + 1);

@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { Upload, Download, CheckCircle, AlertCircle, FileText, Users } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
+import { fetchAllCustomersByCreatedDesc } from '../lib/fetchAllCustomers';
 
 type Customer = Database['public']['Tables']['customers']['Row'];
 
-const SUPABASE_FETCH_PAGE = 1000;
 const LIST_ROWS_PER_PAGE = 200;
 
 export default function CustomerImport() {
@@ -33,20 +33,8 @@ export default function CustomerImport() {
   const loadCustomers = async () => {
     setLoadingList(true);
     try {
-      const rows: Customer[] = [];
-      for (let from = 0; ; from += SUPABASE_FETCH_PAGE) {
-        const { data, error } = await supabase
-          .from('customers')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .range(from, from + SUPABASE_FETCH_PAGE - 1);
-
-        if (error) throw error;
-        const batch = (data || []) as Customer[];
-        rows.push(...batch);
-        if (batch.length < SUPABASE_FETCH_PAGE) break;
-      }
-      setCustomers(rows);
+      const rows = await fetchAllCustomersByCreatedDesc();
+      setCustomers(rows as Customer[]);
       setListPage(1);
     } catch (error) {
       console.error('顧客リスト読み込みエラー:', error);
